@@ -15,7 +15,11 @@ def read_root():
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {'.doc', '.docx', '.odt'}
+ALLOWED_EXTENSIONS = {
+    '.doc', '.docx', '.odt', '.rtf',
+    '.xls', '.xlsx', '.ods',
+    '.ppt', '.pptx', '.odp'
+}
 
 @app.post("/convert")
 async def convert_to_pdf(file: UploadFile = File(...)):
