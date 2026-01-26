@@ -1,9 +1,7 @@
-# Imagen base de Python
 FROM python:3.11-slim
-
-# Instalar LibreOffice y dependencias
 RUN apt-get update && apt-get install -y \
     libreoffice \
+    default-jre-headless \
     curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -11,13 +9,20 @@ RUN apt-get update && apt-get install -y \
 # Crear directorio de trabajo
 WORKDIR /app
 
-# Copiar archivos del proyecto
-COPY . .
-
-# Instalar dependencias de Python
+# OPTIMIZACIÓN: Copiar solo requirements primero para usar el caché de Docker
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Exponer el puerto que usará Uvicorn
+# Copiar el resto de los archivos del proyecto
+COPY . .
+
+# Crear el directorio de uploads con permisos correctos
+RUN mkdir -p uploads && chmod 777 uploads
+
+# Variable de entorno para que LibreOffice no de problemas de perfil
+ENV HOME=/tmp
+
+# Exponer el puerto
 EXPOSE 10000
 
 # Comando para ejecutar FastAPI

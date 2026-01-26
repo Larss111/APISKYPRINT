@@ -7,3 +7,5 @@ services:
     envVars:
       - key: ENV
         value: production
+      - key: PORT
+        value: 10000 #
