@@ -21,8 +21,12 @@ def remove_file(path: Path):
     if path.exists():
         path.unlink()
 
+MAX_FILE_SIZE = 10 * 1024 * 1024
+
 @app.post("/convert")
 async def convert_to_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    if file.size and file.size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="El archivo es demasiado grande. Máximo 10MB.")
     ext = Path(file.filename).suffix.lower()
     if ext not in TO_PDF_EXT:
         raise HTTPException(status_code=400, detail="Extensión no soportada para PDF.")
@@ -55,6 +59,8 @@ async def convert_to_pdf(background_tasks: BackgroundTasks, file: UploadFile = F
 
 @app.post("/convert-to-word")
 async def convert_to_word(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    if file.size and file.size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="El archivo es demasiado grande. Máximo 10MB.")
     ext = Path(file.filename).suffix.lower()
     if ext != '.pdf':
         raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF.")
