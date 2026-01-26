@@ -1,6 +1,5 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
-import os
 import shutil
 import uuid
 import subprocess
@@ -8,24 +7,23 @@ from pathlib import Path
 
 app = FastAPI()
 
-@app.get("/")
-def read_root():
-    return {"message": "API SkyPrint activa. Usa /docs para probar."}
-
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {
-    '.doc', '.docx', '.odt', '.rtf',
-    '.xls', '.xlsx', '.ods',
-    '.ppt', '.pptx', '.odp'
-}
+# Separamos las extensiones para evitar confusiones
+TO_PDF_EXT = {'.doc', '.docx', '.odt', '.rtf', '.xls', '.xlsx', '.ods', '.ppt', '.pptx', '.odp'}
+TO_WORD_EXT = {'.pdf'}
+
+# Función para borrar archivos después de enviarlos
+def remove_file(path: Path):
+    if path.exists():
+        path.unlink()
 
 @app.post("/convert")
-async def convert_to_pdf(file: UploadFile = File(...)):
+async def convert_to_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     ext = Path(file.filename).suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Archivo no compatible. Usa .doc, .docx u .odt")
+    if ext not in TO_PDF_EXT:
+        raise HTTPException(status_code=400, detail="Extensión no soportada para PDF.")
 
     file_id = uuid.uuid4().hex
     input_path = UPLOAD_DIR / f"{file_id}{ext}"
@@ -35,23 +33,51 @@ async def convert_to_pdf(file: UploadFile = File(...)):
         with input_path.open("wb") as f:
             shutil.copyfileobj(file.file, f)
 
-        result = subprocess.run([
-            "soffice", "--headless", "--convert-to", "pdf", "--outdir",
-            str(UPLOAD_DIR), str(input_path)
-        ], capture_output=True, text=True)
+        subprocess.run([
+            "soffice", "--headless", "--convert-to", "pdf", 
+            "--outdir", str(UPLOAD_DIR), str(input_path)
+        ], check=True, capture_output=True)
 
-        if result.returncode != 0:
-            raise HTTPException(status_code=500, detail=f"Error al convertir: {result.stderr.strip()}")
-
-        if not output_path.exists():
-            raise HTTPException(status_code=500, detail="No se generó el PDF")
+        # Agregamos la tarea de borrar el PDF después de enviarlo
+        background_tasks.add_task(remove_file, output_path)
 
         return FileResponse(
             path=output_path,
             media_type="application/pdf",
-            filename=output_path.name
+            filename=f"SkyPrint_{file.filename.rsplit('.', 1)[0]}.pdf"
         )
-
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if input_path.exists():
-            input_path.unlink()
+        remove_file(input_path)
+
+@app.post("/convert-to-word")
+async def convert_to_word(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    ext = Path(file.filename).suffix.lower()
+    if ext not in TO_WORD_EXT:
+        raise HTTPException(status_code=400, detail="Solo se permiten archivos .pdf")
+
+    file_id = uuid.uuid4().hex
+    input_path = UPLOAD_DIR / f"{file_id}{ext}"
+    output_path = input_path.with_suffix('.docx')
+
+    try:
+        with input_path.open("wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        subprocess.run([
+            "soffice", "--headless", "--convert-to", "docx", 
+            "--outdir", str(UPLOAD_DIR), str(input_path)
+        ], check=True, capture_output=True)
+
+        background_tasks.add_task(remove_file, output_path)
+
+        return FileResponse(
+            path=output_path,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=f"SkyPrint_{file.filename.rsplit('.', 1)[0]}.docx"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        remove_file(input_path)
